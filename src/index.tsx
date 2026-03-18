@@ -375,7 +375,6 @@ app.get('/', (c) => {
 
 </form>
 
-<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <script>
 let feeAmount = 0;
 let feeCat = '';
@@ -490,14 +489,28 @@ async function submitForm() {
 
   const btn = document.getElementById('payBtn');
   btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating Order...';
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving Details...';
 
   try {
+    // ── STEP 1: Save form data first (PENDING status), get registration_id back ──
+    const fd = new FormData(document.getElementById('regForm'));
+    fd.append('fee_amount', feeAmount);
+
+    const saveRes = await fetch('/api/pre-register', { method: 'POST', body: fd });
+    const saved = await saveRes.json();
+    if (!saved.success) throw new Error(saved.error || 'Failed to save registration');
+
+    const registrationId = saved.registration_id;
+
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating Payment...';
+
+    // ── STEP 2: Create Razorpay order ─────────────────────────────────────────
     const orderRes = await fetch('/api/create-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         amount: feeAmount,
+        registration_id: registrationId,
         name: document.getElementById('first_name').value + ' ' + document.getElementById('surname').value,
         email: document.getElementById('email').value,
         phone: document.getElementById('whatsapp').value
@@ -506,47 +519,42 @@ async function submitForm() {
     const order = await orderRes.json();
     if (!order.id) throw new Error(order.error || 'Order creation failed');
 
-    const options = {
-      key: order.key_id,
-      amount: order.amount,
-      currency: 'INR',
-      name: 'Shri Tuljabhavani Sainiki School',
-      description: 'Std 6th Admission 2026-27',
-      image: 'https://via.placeholder.com/80/0f2c6b/fff?text=SVT',
-      order_id: order.id,
-      prefill: {
-        name: document.getElementById('first_name').value + ' ' + document.getElementById('surname').value,
-        email: document.getElementById('email').value,
-        contact: document.getElementById('whatsapp').value
-      },
-      theme: { color: '#0f2c6b' },
-      handler: async function(response) {
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving Registration...';
-        const fd = new FormData(document.getElementById('regForm'));
-        fd.append('razorpay_payment_id', response.razorpay_payment_id);
-        fd.append('razorpay_order_id', response.razorpay_order_id);
-        fd.append('razorpay_signature', response.razorpay_signature);
-        fd.append('fee_amount', feeAmount);
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Redirecting to Payment...';
 
-        const saveRes = await fetch('/api/register', { method: 'POST', body: fd });
-        const result = await saveRes.json();
-        if (result.success) {
-          window.location.href = '/receipt/' + result.registration_id;
-        } else {
-          showToast('Registration failed: ' + (result.error || 'Unknown error'));
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-lock mr-2"></i>Submit & Pay ₹' + feeAmount;
-        }
-      },
-      modal: {
-        ondismiss: function() {
-          btn.disabled = false;
-          btn.innerHTML = '<i class="fas fa-lock mr-2"></i>Submit & Pay ₹' + feeAmount;
-        }
-      }
+    // ── STEP 3: Build hidden form and POST-redirect to Razorpay ──────────────
+    // Razorpay Standard Checkout redirect — user lands on Razorpay's hosted page
+    const rzpForm = document.createElement('form');
+    rzpForm.method = 'POST';
+    rzpForm.action = 'https://api.razorpay.com/v1/checkout/embedded';
+    rzpForm.style.display = 'none';
+
+    const fields = {
+      key_id:          order.key_id,
+      order_id:        order.id,
+      name:            'Shri Tuljabhavani Sainiki School',
+      description:     'Std 6th Admission 2026-27',
+      image:           'https://via.placeholder.com/80/0f2c6b/ffffff?text=SVT',
+      prefill_name:    document.getElementById('first_name').value + ' ' + document.getElementById('surname').value,
+      prefill_email:   document.getElementById('email').value,
+      prefill_contact: document.getElementById('whatsapp').value,
+      notes_reg_id:    registrationId,
+      // After payment success Razorpay will redirect here
+      callback_url:    window.location.origin + '/payment/callback',
+      // On cancel, go back to form
+      cancel_url:      window.location.origin + '/?cancelled=1&reg=' + registrationId,
     };
-    const rzp = new Razorpay(options);
-    rzp.open();
+
+    Object.entries(fields).forEach(([k, v]) => {
+      const inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = k;
+      inp.value = v;
+      rzpForm.appendChild(inp);
+    });
+
+    document.body.appendChild(rzpForm);
+    rzpForm.submit(); // ← Full page redirect to Razorpay
+
   } catch (err) {
     showToast('Error: ' + err.message);
     btn.disabled = false;
@@ -559,51 +567,17 @@ async function submitForm() {
   return c.html(html)
 })
 
-// ─── API: Create Razorpay Order ───────────────────────────────────────────────
-app.post('/api/create-order', async (c) => {
-  try {
-    const body = await c.req.json()
-    const { amount, name, email, phone } = body
-
-    const keyId = c.env.RAZORPAY_KEY_ID
-    const keySecret = c.env.RAZORPAY_KEY_SECRET
-
-    if (!keyId || !keySecret) {
-      return c.json({ error: 'Payment gateway not configured' }, 500)
-    }
-
-    const auth = btoa(`${keyId}:${keySecret}`)
-    const res = await fetch('https://api.razorpay.com/v1/orders', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        amount: amount * 100,
-        currency: 'INR',
-        receipt: `reg_${Date.now()}`,
-        notes: { name, email, phone }
-      })
-    })
-    const order = await res.json()
-    return c.json({ ...order, key_id: keyId })
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500)
-  }
-})
-
-// ─── API: Register (save to Hostinger MySQL) ──────────────────────────────────
-app.post('/api/register', async (c) => {
+// ─── API: Pre-Register (save PENDING before payment) ─────────────────────────
+app.post('/api/pre-register', async (c) => {
   try {
     const formData = await c.req.formData()
 
-    const photoFile = formData.get('photo') as File
-    const bonafideFile = formData.get('bonafide') as File
-    const aadharDocFile = formData.get('aadhar_doc') as File
+    const photoFile  = formData.get('photo')      as File
+    const bonFile    = formData.get('bonafide')    as File
+    const aadharFile = formData.get('aadhar_doc')  as File
 
-    // Convert files to base64 for storage
     const toBase64 = async (file: File): Promise<string> => {
+      if (!file || !file.size) return ''
       const ab = await file.arrayBuffer()
       const bytes = new Uint8Array(ab)
       let binary = ''
@@ -611,57 +585,54 @@ app.post('/api/register', async (c) => {
       return `data:${file.type};base64,${btoa(binary)}`
     }
 
-    const photoB64 = photoFile ? await toBase64(photoFile) : ''
-    const bonafideB64 = bonafideFile ? await toBase64(bonafideFile) : ''
-    const aadharDocB64 = aadharDocFile ? await toBase64(aadharDocFile) : ''
+    const photoB64      = await toBase64(photoFile)
+    const bonafideB64   = await toBase64(bonFile)
+    const aadharDocB64  = await toBase64(aadharFile)
 
     const registrationId = `SVT${Date.now()}`
-    const paymentId = formData.get('razorpay_payment_id') as string
-    const orderId = formData.get('razorpay_order_id') as string
 
-    // Save to Hostinger MySQL via PHP API
     const hostingerApiUrl = c.env.HOSTINGER_API_URL
     if (!hostingerApiUrl) {
       return c.json({ error: 'Database API not configured' }, 500)
     }
 
     const payload = {
-      registration_id: registrationId,
-      surname: formData.get('surname'),
-      first_name: formData.get('first_name'),
-      middle_name: formData.get('middle_name'),
-      father_name: formData.get('father_name'),
-      mother_name: formData.get('mother_name'),
-      dob: formData.get('dob'),
-      aadhar: formData.get('aadhar'),
-      gender: formData.get('gender'),
-      whatsapp: formData.get('whatsapp'),
-      alt_number: formData.get('alt_number'),
-      email: formData.get('email'),
-      address: formData.get('address'),
-      category: formData.get('category'),
-      fee_category: formData.get('fee_category'),
-      fee_amount: formData.get('fee_amount'),
-      present_school: formData.get('present_school'),
-      prev_std: formData.get('prev_std'),
-      prev_board: formData.get('prev_board'),
-      exam_language: formData.get('exam_language'),
-      exam_centre: formData.get('exam_centre'),
-      payment_id: paymentId,
-      order_id: orderId,
-      razorpay_signature: formData.get('razorpay_signature'),
-      payment_status: 'PAID',
-      photo: photoB64,
-      bonafide_doc: bonafideB64,
-      aadhar_doc: aadharDocB64,
-      course: '6th',
-      academic_year: '2026-27'
+      registration_id:    registrationId,
+      surname:            formData.get('surname'),
+      first_name:         formData.get('first_name'),
+      middle_name:        formData.get('middle_name'),
+      father_name:        formData.get('father_name'),
+      mother_name:        formData.get('mother_name'),
+      dob:                formData.get('dob'),
+      aadhar:             formData.get('aadhar'),
+      gender:             formData.get('gender'),
+      whatsapp:           formData.get('whatsapp'),
+      alt_number:         formData.get('alt_number'),
+      email:              formData.get('email'),
+      address:            formData.get('address'),
+      category:           formData.get('category'),
+      fee_category:       formData.get('fee_category'),
+      fee_amount:         formData.get('fee_amount'),
+      present_school:     formData.get('present_school'),
+      prev_std:           formData.get('prev_std'),
+      prev_board:         formData.get('prev_board'),
+      exam_language:      formData.get('exam_language'),
+      exam_centre:        formData.get('exam_centre'),
+      course:             '6th',
+      academic_year:      '2026-27',
+      payment_status:     'PENDING',        // ← PENDING until Razorpay confirms
+      payment_id:         '',
+      order_id:           '',
+      razorpay_signature: '',
+      photo:              photoB64,
+      bonafide_doc:       bonafideB64,
+      aadhar_doc:         aadharDocB64,
     }
 
-    const dbRes = await fetch(`${hostingerApiUrl}/save_registration.php`, {
-      method: 'POST',
+    const dbRes    = await fetch(`${hostingerApiUrl}/save_registration.php`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body:    JSON.stringify(payload),
     })
     const dbResult = await dbRes.json()
 
@@ -674,6 +645,118 @@ app.post('/api/register', async (c) => {
     return c.json({ error: e.message }, 500)
   }
 })
+
+// ─── API: Create Razorpay Order ───────────────────────────────────────────────
+app.post('/api/create-order', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { amount, name, email, phone, registration_id } = body
+
+    const keyId    = c.env.RAZORPAY_KEY_ID
+    const keySecret = c.env.RAZORPAY_KEY_SECRET
+
+    if (!keyId || !keySecret) {
+      return c.json({ error: 'Payment gateway not configured' }, 500)
+    }
+
+    const auth = btoa(`${keyId}:${keySecret}`)
+    const res  = await fetch('https://api.razorpay.com/v1/orders', {
+      method:  'POST',
+      headers: {
+        'Authorization':  `Basic ${auth}`,
+        'Content-Type':   'application/json',
+      },
+      body: JSON.stringify({
+        amount:   amount * 100,         // paise
+        currency: 'INR',
+        receipt:  registration_id || `reg_${Date.now()}`,
+        notes:    { name, email, phone, registration_id },
+      }),
+    })
+    const order = await res.json()
+    return c.json({ ...order, key_id: keyId })
+  } catch (e: any) {
+    return c.json({ error: e.message }, 500)
+  }
+})
+
+// ─── Payment Callback (Razorpay redirects here after payment) ────────────────
+// Razorpay POST-redirects with: razorpay_payment_id, razorpay_order_id,
+//   razorpay_signature (success) OR razorpay_payment_link_status=cancelled
+app.post('/payment/callback', async (c) => {
+  try {
+    const body     = await c.req.parseBody()
+    const paymentId  = body['razorpay_payment_id']  as string
+    const orderId    = body['razorpay_order_id']    as string
+    const signature  = body['razorpay_signature']   as string
+
+    // Verify signature using HMAC-SHA256
+    const keySecret  = c.env.RAZORPAY_KEY_SECRET || ''
+    const message    = `${orderId}|${paymentId}`
+
+    // Web Crypto API (available in Cloudflare Workers)
+    const encoder    = new TextEncoder()
+    const keyData    = encoder.encode(keySecret)
+    const msgData    = encoder.encode(message)
+    const cryptoKey  = await crypto.subtle.importKey(
+      'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    )
+    const sigBuffer  = await crypto.subtle.sign('HMAC', cryptoKey, msgData)
+    const sigHex     = Array.from(new Uint8Array(sigBuffer))
+      .map(b => b.toString(16).padStart(2, '0')).join('')
+
+    const isValid    = sigHex === signature
+
+    if (!isValid) {
+      // Signature mismatch – suspicious request
+      return c.html(`<html><body><script>window.location.href='/?payment=failed';</script></body></html>`)
+    }
+
+    // ── Fetch order details from Razorpay to get registration_id ─────────────
+    const keyId   = c.env.RAZORPAY_KEY_ID || ''
+    const auth    = btoa(`${keyId}:${keySecret}`)
+    const orderRes = await fetch(`https://api.razorpay.com/v1/orders/${orderId}`, {
+      headers: { 'Authorization': `Basic ${auth}` },
+    })
+    const orderData    = await orderRes.json() as any
+    const registrationId = orderData?.notes?.registration_id || ''
+
+    // ── Update registration in Hostinger DB: PENDING → PAID ──────────────────
+    const hostingerApiUrl = c.env.HOSTINGER_API_URL || ''
+    if (hostingerApiUrl && registrationId) {
+      await fetch(`${hostingerApiUrl}/update_registration.php`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          registration_id:    registrationId,
+          payment_id:         paymentId,
+          order_id:           orderId,
+          razorpay_signature: signature,
+          payment_status:     'PAID',
+        }),
+      })
+    }
+
+    // ── Redirect to receipt page ──────────────────────────────────────────────
+    const redirectId = registrationId || orderId
+    return c.redirect(`/receipt/${redirectId}`, 302)
+
+  } catch (e: any) {
+    return c.html(`<html><body><h2>Payment Error</h2><p>${e.message}</p><a href="/">Go Back</a></body></html>`)
+  }
+})
+
+// GET callback (some browsers redirect via GET)
+app.get('/payment/callback', async (c) => {
+  const paymentId = c.req.query('razorpay_payment_id') || ''
+  const orderId   = c.req.query('razorpay_order_id')   || ''
+  if (paymentId && orderId) {
+    return c.redirect(`/receipt/${orderId}`, 302)
+  }
+  return c.redirect('/?payment=cancelled', 302)
+})
+
+// ─── (old /api/register removed – replaced by /api/pre-register + /payment/callback) ───
 
 // ─── Receipt Page ─────────────────────────────────────────────────────────────
 app.get('/receipt/:id', async (c) => {
