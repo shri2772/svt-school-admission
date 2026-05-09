@@ -14,7 +14,7 @@ app.get('/', (c) => {
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Std 6th Admission 2026-27 | Shri Tuljabhavani Sainiki School</title>
+<title>Std 11th Admission 2026-27 | Shri Tuljabhavani Sainiki School</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css"/>
 <style>
@@ -59,7 +59,7 @@ app.get('/', (c) => {
     <div class="md:ml-auto text-center md:text-right">
       <div class="inline-block bg-gradient-to-r from-blue-900 to-blue-700 text-white px-4 py-2 rounded-lg">
         <p class="text-xs uppercase tracking-widest">Admission 2026-27</p>
-        <p class="text-lg font-bold">Std 6th Registration</p>
+        <p class="text-lg font-bold">Std 11th Registration</p>
       </div>
     </div>
   </div>
@@ -136,12 +136,12 @@ app.get('/', (c) => {
       </div>
       <div>
         <label class="field-label">Gender <span class="req">*</span></label>
-        <select name="gender" id="gender" class="field-input" required>
-          <option value="">Select Gender</option>
-          <option>Male</option>
-          <option>Female</option>
-          <option>Other</option>
-        </select>
+        <div class="field-input bg-blue-50 border-blue-300 flex items-center gap-3 cursor-not-allowed select-none">
+          <i class="fas fa-mars text-blue-700 text-lg"></i>
+          <span class="font-bold text-blue-900">Male</span>
+          <span class="ml-auto text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full font-semibold">👦 Boys Only School</span>
+        </div>
+        <input type="hidden" name="gender" id="gender" value="Male"/>
       </div>
     </div>
 
@@ -226,8 +226,8 @@ app.get('/', (c) => {
         <label class="field-label">Previous Standard <span class="req">*</span></label>
         <select name="prev_std" class="field-input" required>
           <option value="">Select</option>
-          <option value="5th">5th</option>
-          <option value="6th">6th</option>
+          <option value="10th">10th</option>
+          <option value="11th">11th (Repeater)</option>
         </select>
       </div>
     </div>
@@ -272,11 +272,33 @@ app.get('/', (c) => {
       </div>
     </div>
 
+    <!-- Ex-Servicemen Question -->
+    <div class="mb-4">
+      <label class="field-label">Is the student a child of an Ex-Serviceman? <span class="req">*</span></label>
+      <p class="text-xs text-gray-400 mb-2">Select Yes if father / guardian has served in the Indian Armed Forces</p>
+      <div class="grid grid-cols-2 gap-4">
+        <label class="flex items-center gap-3 border-2 border-gray-200 rounded-xl p-4 cursor-pointer hover:border-green-500 transition-all has-[:checked]:border-green-600 has-[:checked]:bg-green-50">
+          <input type="radio" name="ex_serviceman" value="Yes" class="accent-green-600" required/>
+          <div>
+            <p class="font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-shield-alt text-green-600"></i> Yes</p>
+            <p class="text-xs text-gray-500">Child of Ex-Serviceman</p>
+          </div>
+        </label>
+        <label class="flex items-center gap-3 border-2 border-gray-200 rounded-xl p-4 cursor-pointer hover:border-gray-400 transition-all has-[:checked]:border-gray-500 has-[:checked]:bg-gray-50">
+          <input type="radio" name="ex_serviceman" value="No" class="accent-gray-600" required/>
+          <div>
+            <p class="font-bold text-gray-700 flex items-center gap-2"><i class="fas fa-times-circle text-gray-400"></i> No</p>
+            <p class="text-xs text-gray-500">Not applicable</p>
+          </div>
+        </label>
+      </div>
+    </div>
+
     <div class="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4">
       <p class="text-sm text-amber-800 font-semibold"><i class="fas fa-info-circle mr-2"></i>Important Note</p>
       <ul class="text-xs text-amber-700 mt-1 list-disc ml-4 space-y-1">
         <li>Candidates must undergo a Medical Fitness Test (मेडिकल फिटनेस टेस्ट)</li>
-        <li>Age criteria: Born between 01 June 2014 and 31 May 2016</li>
+        <li>This school is exclusively for Boys</li>
         <li>Incomplete forms will be rejected</li>
       </ul>
     </div>
@@ -440,7 +462,7 @@ function goStep(step) {
 }
 
 function validateStep1() {
-  const required = ['surname','first_name','father_name','mother_name','dob','aadhar','gender','whatsapp','email','address'];
+  const required = ['surname','first_name','father_name','mother_name','dob','aadhar','whatsapp','email','address'];
   for (const f of required) {
     const el = document.getElementById(f);
     if (!el || !el.value.trim()) { showToast('Please fill: ' + f.replace('_',' ')); el?.focus(); return false; }
@@ -460,6 +482,7 @@ function validateStep1() {
 function validateStep2() {
   const ps = document.querySelector('[name="present_school"]').value;
   if (!ps.trim()) { showToast('Please enter Present School Name'); return false; }
+  if (!document.querySelector('input[name="ex_serviceman"]:checked')) { showToast('Please select whether the student is a child of Ex-Serviceman'); return false; }
   if (!document.querySelector('[name="prev_std"]').value) { showToast('Please select Previous Standard'); return false; }
   if (!document.querySelector('[name="prev_board"]').value) { showToast('Please select Previous Board'); return false; }
   if (!document.querySelector('[name="exam_language"]').value) { showToast('Please select Exam Language'); return false; }
@@ -532,7 +555,7 @@ async function submitForm() {
       key_id:          order.key_id,
       order_id:        order.id,
       name:            'Shri Tuljabhavani Sainiki School',
-      description:     'Std 6th Admission 2026-27',
+      description:     'Std 11th Admission 2026-27',
       image:           'https://via.placeholder.com/80/0f2c6b/ffffff?text=SVT',
       prefill_name:    document.getElementById('first_name').value + ' ' + document.getElementById('surname').value,
       prefill_email:   document.getElementById('email').value,
@@ -618,7 +641,8 @@ app.post('/api/pre-register', async (c) => {
       prev_board:         formData.get('prev_board'),
       exam_language:      formData.get('exam_language'),
       exam_centre:        formData.get('exam_centre'),
-      course:             '6th',
+      ex_serviceman:      formData.get('ex_serviceman'),
+      course:             '11th',
       academic_year:      '2026-27',
       payment_status:     'PENDING',        // ← PENDING until Razorpay confirms
       payment_id:         '',
@@ -808,7 +832,7 @@ app.get('/receipt/:id', async (c) => {
       </div>
       <div class="border-t border-blue-500 mt-3 pt-3">
         <p class="text-lg font-bold tracking-widest">PAYMENT RECEIPT</p>
-        <p class="text-xs text-blue-200">Academic Year 2026-27 | Std 6th Admission</p>
+        <p class="text-xs text-blue-200">Academic Year 2026-27 | Std 11th Admission</p>
       </div>
     </div>
 
@@ -1002,7 +1026,7 @@ app.get('/admin/dashboard', async (c) => {
       </td>
       <td class="py-3 px-3 text-sm font-mono">${r.aadhar || '—'}</td>
       <td class="py-3 px-3 text-sm">${r.whatsapp || '—'}</td>
-      <td class="py-3 px-3 text-sm font-semibold text-blue-700">${r.course || '6th'}</td>
+      <td class="py-3 px-3 text-sm font-semibold text-blue-700">${r.course || '11th'}</td>
       <td class="py-3 px-3 text-sm">${r.exam_centre || '—'}</td>
       <td class="py-3 px-3 text-sm font-bold">₹${r.fee_amount || '—'}</td>
       <td class="py-3 px-3">
@@ -1111,7 +1135,7 @@ app.get('/admin/dashboard', async (c) => {
     <div class="flex items-center justify-between mb-6 no-print">
       <div>
         <h1 class="text-2xl font-extrabold text-blue-900">Admin Dashboard</h1>
-        <p class="text-gray-500 text-sm">Std 6th Admission 2026-27 | Shri Tuljabhavani Sainiki School</p>
+        <p class="text-gray-500 text-sm">Std 11th Admission 2026-27 | Shri Tuljabhavani Sainiki School</p>
       </div>
       <div class="flex items-center gap-2">
         <button onclick="filterTable('PAID')" class="nav-btn bg-green-100 text-green-700 hover:bg-green-200"><i class="fas fa-check mr-1"></i>Paid</button>
